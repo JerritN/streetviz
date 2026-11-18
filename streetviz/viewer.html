@@ -8,7 +8,7 @@
 #map{position:absolute;inset:0} aside{position:absolute;top:12px;left:12px;max-width:75vw;background:white;padding:12px 16px;border-radius:6px;box-shadow:0 2px 10px #0003}
 h1{font-size:17px;margin:0 0 4px} label{display:block} #info{margin-top:8px;max-width:240px}
 </style></head><body><div id="map"></div><aside><h1>Geographic graph</h1>
-<div id="basemap-note" hidden></div><div id="counts"></div><div id="controls"></div><div id="info" role="status">Loading viewer…</div></aside>
+<div id="basemap-note" hidden></div><div id="counts"></div><div id="detail"></div><div id="controls"></div><div id="info" role="status">Loading viewer…</div></aside>
 <script type="application/json" id="data">GRAPH_PAYLOAD</script>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
@@ -23,6 +23,22 @@ function color(group) {
 }
 function feature(type, coordinates, properties) {
   return {type:"Feature", geometry:{type, coordinates}, properties};
+}
+// Deterministic reservoir sampling bounds memory even when the whole country is visible.
+function sampleIndices(length, visible) {
+  const limit = 12000, indices = [];
+  let count = 0, state = 1;
+  for (let i = 0; i < length; ++i) {
+    if (!visible(i)) continue;
+    ++count;
+    if (count <= limit) indices.push(i);
+    else {
+      state = (Math.imul(state,1664525) + 1013904223) >>> 0;
+      const slot = Math.floor((state / 4294967296) * count);
+      if (slot < limit) indices[slot] = i;
+    }
+  }
+  return {indices,count};
 }
 function start() {
   const positions = data.positions;
@@ -50,19 +66,65 @@ function start() {
     fitBoundsOptions:{padding:48,maxZoom:17}, style});
   map.addControl(new maplibregl.NavigationControl());
   map.on("load", () => {
-    const nodes = positions.map((p,index) => {
+    function nodeFeature(index) {
       const id = index + 1, group = data.nodesMarked[id];
-      return feature("Point", p, group === undefined ? {id} : {id,group,color:color(group)});
-    });
-    const edges = data.edges.map(([u,v]) => {
+      return feature("Point", positions[index], group === undefined ? {id} : {id,group,color:color(group)});
+    }
+    function edgeFeature(u,v) {
       const group = data.edgesMarked[[u,v]], properties = {u,v};
       if (group !== undefined) Object.assign(properties,{group,color:color(group)});
       const region = data.nodesMarked[u];
       if (region !== undefined && region === data.nodesMarked[v]) properties.regionColor = color(region);
       return feature("LineString",[positions[u-1],positions[v-1]],properties);
-    });
-    for (const [name,features] of [["nodes",nodes],["edges",edges]])
-      map.addSource(name,{type:"geojson",data:{type:"FeatureCollection",features},tolerance:0});
+    }
+
+    const collection = features => ({type:"FeatureCollection",features});
+    const large = positions.length + data.edges.length > 250000;
+    if (large) {
+      // Reserve a separate budget for marked edges so sparse cuts survive overview sampling.
+      const markedPairs = Object.keys(data.edgesMarked).map(key => key.split(",").map(Number));
+      const detail = document.getElementById("detail");
+      function refresh(initial) {
+        const bounds = map.getBounds();
+        const west = bounds.getWest(), east = bounds.getEast();
+        const south = bounds.getSouth(), north = bounds.getNorth();
+        function overlaps(left, right) {
+          // A viewport may cover a wrapped copy of the world.
+          const offset = 360 * Math.ceil((west - right) / 360);
+          return left + offset <= east;
+        }
+        function edgeVisible(pair) {
+          const a = positions[pair[0]-1], b = positions[pair[1]-1];
+          return Math.max(a[1],b[1]) >= south && Math.min(a[1],b[1]) <= north &&
+            overlaps(Math.min(a[0],b[0]),Math.max(a[0],b[0]));
+        }
+        const showUnmarked = map.getZoom() >= 14;
+        const nodes = sampleIndices(positions.length, i => {
+          const [x,y] = positions[i];
+          return y >= south && y <= north && overlaps(x,x) &&
+            (showUnmarked || data.nodesMarked[i+1] !== undefined);
+        });
+        const roads = sampleIndices(data.edges.length, i => edgeVisible(data.edges[i]));
+        const cuts = sampleIndices(markedPairs.length, i => edgeVisible(markedPairs[i]));
+        const lines = [];
+        for (const i of roads.indices) {
+          const [u,v] = data.edges[i];
+          if (data.edgesMarked[[u,v]] === undefined) lines.push(edgeFeature(u,v));
+        }
+        for (const i of cuts.indices) lines.push(edgeFeature(...markedPairs[i]));
+        const sampled = [nodes,roads,cuts].some(s => s.count > s.indices.length);
+        detail.textContent = sampled ? "Overview sampled · zoom in for more detail" : "";
+        for (const [id,features] of [["nodes",nodes.indices.map(nodeFeature)],["edges",lines]]) {
+          if (initial) map.addSource(id,{type:"geojson",data:collection(features),tolerance:0});
+          else map.getSource(id).setData(collection(features));
+        }
+      }
+      refresh(true);
+      map.on("moveend", () => refresh(false));
+    } else {
+      map.addSource("nodes",{type:"geojson",data:collection(positions.map((_,i) => nodeFeature(i))),tolerance:0});
+      map.addSource("edges",{type:"geojson",data:collection(data.edges.map(([u,v]) => edgeFeature(u,v))),tolerance:0});
+    }
     const marked = ["has","group"], unmarked = ["!",marked];
     function lines(id, filter, shade, width) {
       map.addLayer({id,source:"edges",type:"line",filter,
