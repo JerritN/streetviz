@@ -34,6 +34,8 @@ Choose `--basemap none` for a plain background or `--basemap osm` (default) for 
 
 To enable tiles, serve the output directory with `python -m http.server 8000 --bind 127.0.0.1` and open [the report](http://127.0.0.1:8000/network.html). Opening a local HTML file directly shows a plain background. All modes use WebGL and fetch the pinned MapLibre JS/CSS from unpkg. Graph data travels inside the HTML. Marked nodes are visible at every zoom and unmarked nodes appear from zoom level 14. Embed the report on another page with `<iframe src="network.html" title="Network map"></iframe>`.
 
+For large graphs the overview samples features in the current viewport and reserves a separate budget for marked edges. Zoom in until the sampling notice disappears to inspect all visible features. The report still contains the full graph. After updating Streetviz, regenerate older HTML reports to use the new viewer.
+
 ## Architecture and Python API
 
 `Network` stores immutable positions and undirected edges. `read_metis` constructs it from files and `read_markings` imports optional sparse assignments separately. The CLI calls these adapters and passes their results to `write_html`, which embeds them in the packaged viewer. MapLibre expands the edges into line segments in the browser. Generation and viewing both hold the graph in memory.
