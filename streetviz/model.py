@@ -1,5 +1,6 @@
 """File adapters. Node IDs remain one-based throughout the public model."""
 import bz2
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -7,27 +8,27 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Network:
     """Geographic positions in vertex order and undirected one-based endpoints."""
-    positions: tuple
-    edges: tuple
-    _edge_index: frozenset = field(init=False, repr=False, compare=False)
+    positions: tuple[tuple[float, float], ...]
+    edges: tuple[tuple[int, int], ...]
+    _edge_index: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self):
-        positions = tuple(tuple(p) for p in self.positions)
-        if not positions:
+    def __init__(self, positions: Iterable[Sequence[float]], edges: Iterable[Sequence[int]]) -> None:
+        points = tuple((x, y) for x, y in positions)
+        if not points:
             raise ValueError("expected at least one vertex")
-        for x, y in positions:
+        for x, y in points:
             if not (-180 <= x <= 180 and -85.051129 <= y <= 85.051129):
                 raise ValueError("coordinate outside map bounds")
-        edges = []
-        for u, v in self.edges:
-            if any(type(i) is not int or not 1 <= i <= len(positions) for i in (u, v)) or u == v:
+        normalized_edges: list[tuple[int, int]] = []
+        for u, v in edges:
+            if any(type(i) is not int or not 1 <= i <= len(points) for i in (u, v)) or u == v:
                 raise ValueError(f"invalid edge {u}, {v}")
-            edges.append((min(u, v), max(u, v)))
-        index = frozenset(edges)
-        if len(index) != len(edges):
+            normalized_edges.append((min(u, v), max(u, v)))
+        index = frozenset(normalized_edges)
+        if len(index) != len(normalized_edges):
             raise ValueError("duplicate undirected edge")
-        object.__setattr__(self, "positions", positions)
-        object.__setattr__(self, "edges", tuple(edges))
+        object.__setattr__(self, "positions", points)
+        object.__setattr__(self, "edges", tuple(normalized_edges))
         object.__setattr__(self, "_edge_index", index)
 
 
@@ -63,7 +64,7 @@ def integers(location, fields):
         raise ValueError(f"{location}: expected integer fields") from exc
 
 
-def topology(path):
+def topology(path) -> tuple[int, set[tuple[int, int]]]:
     records = rows(path, keep_empty=True)
     loc, fields = next(records, (str(path), []))
     if len(fields) not in (2, 3):
@@ -93,7 +94,7 @@ def topology(path):
     return n, edges
 
 
-def coordinates(path, n, coord_format):
+def coordinates(path, n, coord_format) -> list[tuple[float, float]]:
     if coord_format not in ("dimacs10-osm", "lonlat"):
         raise ValueError(f"Unknown coordinate format {coord_format!r}")
     result = []
@@ -134,7 +135,7 @@ def markings(path, n, base, edges=None):
     return result
 
 
-def read_metis(graph, coords, *, coord_format):
+def read_metis(graph, coords, *, coord_format) -> Network:
     n, edges = topology(graph)
     return Network(coordinates(coords, n, coord_format), sorted(edges))
 
