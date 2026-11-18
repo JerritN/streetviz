@@ -26,7 +26,7 @@ Open `network.html` and click the red edge to inspect “Route A” (group 0). T
 | Node groups | One `vertex group` per marked vertex. |
 | Group styles | Optional UTF-8 JSON object keyed by group ID, e.g. `{"0":{"label":"Route A","color":"#a33243"}}`. Each entry can specify either field or both. |
 
-Graph, coordinate and marking files can be plain text or bzip2 with a `.bz2` suffix. They support whole-line comments beginning with `%` or `#`. Group IDs are nonnegative integers. Missing assignments use the default drawing style. Group colors are deterministic unless overridden. Markings default to 1-based IDs, with `--mark-id-base 0` available for zero-based files. IDs refer to the original graph.
+Graph, coordinate and marking files can be plain text or bzip2 with a `.bz2` suffix. They support whole-line comments beginning with `%` or `#`. Group IDs are nonnegative integers. Missing assignments use the default drawing style. Groups 0–7 use a fixed palette of contrasting colors. Higher IDs get stable hues spaced by the golden angle. The same group ID keeps its color across reports and layers. Use `--groups` to override individual colors. Markings default to 1-based IDs, with `--mark-id-base 0` available for zero-based files. IDs refer to the original graph.
 
 ## Basemaps and viewing
 
