@@ -15,11 +15,28 @@ h1{font-size:17px;margin:0 0 4px} label{display:block} #info{margin-top:8px;max-
 "use strict";
 const data = JSON.parse(document.getElementById("data").textContent);
 const info = document.getElementById("info");
+// Spread the first block IDs across hues as well as lightness levels.
+const palette = [
+  "#0072B2", "#D55E00", "#008450", "#B3489B",
+  "#DBA900", "#554394", "#26A6AC", "#873E23",
+];
+const groupColors = new Map();
 function color(group) {
-  if (data.groups[group]?.color) return data.groups[group].color;
-  let hash = 2166136261;
-  for (const digit of group) hash = Math.imul(hash ^ digit.charCodeAt(0), 16777619);
-  return "hsl(" + ((hash >>> 0) % 360) + ",75%,42%)";
+  if (groupColors.has(group)) return groupColors.get(group);
+  let shade = data.groups[group]?.color;
+  if (!shade) {
+    const id = BigInt(group);
+    if (id < BigInt(palette.length)) {
+      shade = palette[Number(id)];
+    } else {
+      // A golden-angle step separates neighboring IDs, including large integer IDs.
+      const hue = Number((id * 137508n) % 360000n) / 1000;
+      const lightness = [38, 50, 43][Number(id % 3n)];
+      shade = `hsl(${hue},72%,${lightness}%)`;
+    }
+  }
+  groupColors.set(group, shade);
+  return shade;
 }
 function feature(type, coordinates, properties) {
   return {type:"Feature", geometry:{type, coordinates}, properties};
