@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streetviz"
+version = "0.2.0"
+description = "Inspect geographical graphs and group markings on a street map"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+streetviz = "streetviz.cli:main"
+
+[tool.setuptools]
+packages = ["streetviz"]
+
+[tool.setuptools.package-data]
+streetviz = ["viewer.html"]

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Geographic graph inspector</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+*{box-sizing:border-box} body{margin:0;color:#182b35;font:15px/1.45 system-ui,sans-serif}
+#map{position:absolute;inset:0} aside{position:absolute;top:12px;left:12px;max-width:75vw;background:white;padding:12px 16px;border-radius:6px;box-shadow:0 2px 10px #0003}
+h1{font-size:17px;margin:0 0 4px} label{display:block} #info{margin-top:8px;max-width:240px}
+</style></head><body><div id="map"></div><aside><h1>Geographic graph</h1>
+<div id="basemap-note" hidden></div><div id="counts"></div><div id="controls"></div><div id="info" role="status">Loading viewer…</div></aside>
+<script type="application/json" id="data">GRAPH_PAYLOAD</script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+"use strict";
+const data = JSON.parse(document.getElementById("data").textContent);
+const info = document.getElementById("info");
+function color(group) {
+  if (data.groups[group]?.color) return data.groups[group].color;
+  let hash = 2166136261;
+  for (const digit of group) hash = Math.imul(hash ^ digit.charCodeAt(0), 16777619);
+  return "hsl(" + ((hash >>> 0) % 360) + ",75%,42%)";
+}
+function feature(type, coordinates, properties) {
+  return {type:"Feature", geometry:{type, coordinates}, properties};
+}
+function start() {
+  const positions = data.positions;
+  document.getElementById("counts").textContent =
+    positions.length.toLocaleString() + " nodes · " + data.edges.length.toLocaleString() + " edges";
+  const bounds = new maplibregl.LngLatBounds(positions[0], positions[0]);
+  for (const point of positions) bounds.extend(point);
+  const canRequestTiles = data.basemap !== "none" && ["http:", "https:"].includes(location.protocol);
+  const style = {version:8, sources:{}, layers:[
+    {id:"paper",type:"background",paint:{"background-color":"#f3f5f1"}}
+  ]};
+  if (canRequestTiles) {
+    style.sources.basemap = {
+      type:"raster", tiles:[data.tileUrl ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256,
+      maxzoom:19, attribution:data.basemap === "custom" ? data.attribution : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+    };
+    style.layers.push({id:"streets",source:"basemap",type:"raster",paint:{"raster-opacity":0.7}});
+  } else if (data.basemap !== "none") {
+    const note = document.getElementById("basemap-note");
+    note.hidden = false;
+    note.style.maxWidth = "280px";
+    note.textContent = "For the street basemap, run python -m http.server 8000 --bind 127.0.0.1 in this file’s directory and open the report at http://127.0.0.1:8000/.";
+  }
+  const map = new maplibregl.Map({container:"map", bounds,
+    fitBoundsOptions:{padding:48,maxZoom:17}, style});
+  map.addControl(new maplibregl.NavigationControl());
+  map.on("load", () => {
+    const nodes = positions.map((p,index) => {
+      const id = index + 1, group = data.nodesMarked[id];
+      return feature("Point", p, group === undefined ? {id} : {id,group,color:color(group)});
+    });
+    const edges = data.edges.map(([u,v]) => {
+      const group = data.edgesMarked[[u,v]], properties = {u,v};
+      if (group !== undefined) Object.assign(properties,{group,color:color(group)});
+      const region = data.nodesMarked[u];
+      if (region !== undefined && region === data.nodesMarked[v]) properties.regionColor = color(region);
+      return feature("LineString",[positions[u-1],positions[v-1]],properties);
+    });
+    for (const [name,features] of [["nodes",nodes],["edges",edges]])
+      map.addSource(name,{type:"geojson",data:{type:"FeatureCollection",features},tolerance:0});
+    const marked = ["has","group"], unmarked = ["!",marked];
+    function lines(id, filter, shade, width) {
+      map.addLayer({id,source:"edges",type:"line",filter,
+        paint:{"line-color":shade,"line-width":width}});
+    }
+    function dots(id, filter, shade, radius, minzoom) {
+      map.addLayer({id,source:"nodes",type:"circle",filter,minzoom,
+        paint:{"circle-color":shade,"circle-radius":radius}});
+    }
+    lines("roads",unmarked,"#596a70",1);
+    lines("regions",["has","regionColor"],["get","regionColor"],2.5);
+    lines("marked-edges",marked,["get","color"],4);
+    dots("vertices",unmarked,"#45565c",2,14);
+    dots("marked-vertices",marked,["get","color"],4,0);
+    function toggle(title, layers, visible=true) {
+      const label = document.createElement("label"), box = document.createElement("input");
+      box.type = "checkbox"; box.checked = visible;
+      function apply() {
+        for (const id of layers) map.setLayoutProperty(id,"visibility",box.checked ? "visible" : "none");
+      }
+      box.addEventListener("change",apply); apply();
+      label.append(box," " + title); document.getElementById("controls").append(label);
+    }
+    if (canRequestTiles) toggle("Basemap",["streets"]);
+    toggle("Graph edges",["roads"]);
+    toggle("Marked edges",["marked-edges"]);
+    toggle("Nodes",["vertices","marked-vertices"]);
+    toggle("Connect same-group nodes",["regions"],false);
+    info.textContent = "Click a node or edge to inspect it.";
+    map.on("click", event => {
+      const {x,y} = event.point;
+      const hits = map.queryRenderedFeatures([[x-3,y-3],[x+3,y+3]],
+        {layers:["vertices","marked-vertices","roads","marked-edges","regions"]});
+      // Include both a node and a nearby edge at junctions.
+      const node = hits.find(f => f.properties.id !== undefined);
+      const edge = hits.find(f => f.properties.u !== undefined);
+      const describe = (p,label) => label + " · " + (p.group === undefined ? "unmarked" : (data.groups[p.group]?.label ? data.groups[p.group].label + " (group " + p.group + ")" : "group " + p.group));
+      const result = [];
+      if (node) result.push(describe(node.properties,"Node " + node.properties.id));
+      if (edge) result.push(describe(edge.properties,"Edge " + edge.properties.u + "–" + edge.properties.v));
+      info.textContent = result.join(" | ") || "No graph feature here.";
+    });
+  });
+}
+try { start(); } catch (error) { info.textContent = "Viewer could not start. Check internet access and WebGL. " + error.message; }
+</script></body></html>
