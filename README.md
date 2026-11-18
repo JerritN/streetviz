@@ -2,19 +2,32 @@
 
 Explore a geographic network and its node or edge groups in an interactive HTML report. Use the CLI for METIS files or pass coordinates and edges directly from Python. Requires Python 3.10+ and uses the standard library.
 
-## Quickstart
+## Installation on Linux
 
-From the project directory, run the included four-node example.
+Use Python 3.10 or newer. From the repository root (the directory containing `pyproject.toml`), run:
 
 ```sh
-python -m streetviz --graph examples/quickstart/network.graph \
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install .
+streetviz --help
+```
+
+The final dot tells pip to install the current project. In a new shell, activate the environment again or invoke its `.venv/bin/streetviz` executable directly. If Debian or Ubuntu reports that `ensurepip` is unavailable while creating the environment, install the matching venv package (usually `python3-venv`) and retry.
+
+## Quickstart
+
+From the project directory, you can also run the included four-node example directly without installing Streetviz.
+
+```sh
+python3 -m streetviz --graph examples/quickstart/network.graph \
   --coords examples/quickstart/positions.txt --coord-format lonlat \
   --edge-marks examples/quickstart/edge-groups.txt \
   --node-marks examples/quickstart/node-groups.txt \
   --groups examples/quickstart/groups.json --basemap none --output network.html
 ```
 
-Open `network.html` and click the red edge to inspect “Route A” (group 0). Toggle **Connect same-group nodes** to highlight the edge between survey sites 2 and 3. Both marking files and the group styles are optional. Install with `python -m pip install .` to use the `streetviz` command from other directories.
+Open `network.html` and click the red edge to inspect “Route A” (group 0). Toggle **Connect same-group nodes** to highlight the edge between survey sites 2 and 3. Both marking files and the group styles are optional.
 
 ## Inputs
 
@@ -32,7 +45,7 @@ Graph, coordinate and marking files can be plain text or bzip2 with a `.bz2` suf
 
 Choose `--basemap none` for a plain background or `--basemap osm` (default) for OpenStreetMap. For your own XYZ raster provider, select `--basemap custom` and supply both `--tile-url 'https://your-host/{z}/{x}/{y}.png'` and `--attribution 'Provider credit'`. The custom source expects 256-pixel raster tiles. The URL is visible in the output HTML.
 
-To enable tiles, serve the output directory with `python -m http.server 8000 --bind 127.0.0.1` and open [the report](http://127.0.0.1:8000/network.html). Opening a local HTML file directly shows a plain background. All modes use WebGL and fetch the pinned MapLibre JS/CSS from unpkg. Graph data travels inside the HTML. Marked nodes are visible at every zoom and unmarked nodes appear from zoom level 14. Embed the report on another page with `<iframe src="network.html" title="Network map"></iframe>`.
+To enable tiles, serve the output directory with `python3 -m http.server 8000 --bind 127.0.0.1` and open [the report](http://127.0.0.1:8000/network.html). Opening a local HTML file directly shows a plain background. All modes use WebGL and fetch the pinned MapLibre JS/CSS from unpkg. Graph data travels inside the HTML. Marked nodes are visible at every zoom and unmarked nodes appear from zoom level 14. Embed the report on another page with `<iframe src="network.html" title="Network map"></iframe>`.
 
 ## Architecture and Python API
 
@@ -55,4 +68,4 @@ To reuse a network from disk, replace the constructor with `read_metis(graph_pat
 
 - [Luxembourg street network](examples/luxembourg/README.md)
 - [Nextflow integration](examples/nextflow/README.md)
-- Run `python -m unittest discover -s tests` from the project directory.
+- Run `python3 -m unittest discover -s tests` from the project directory.
